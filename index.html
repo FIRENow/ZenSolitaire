@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flipflop Spades</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#1f5c3a;--card:#fbfaf5;--ink:#15181c;--red:#c0262d;--back:#2b4a8a;--back2:#3d62b3;--sel:#f5b800;--ui:rgba(0,0,0,.28);--uit:#fff;--slot:rgba(255,255,255,.22)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10261a;--card:#e9e7de;--back:#1d3263;--back2:#2c4a8f;--ui:rgba(255,255,255,.1)}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--uit);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;user-select:none;-webkit-user-select:none}
+.wrap{max-width:640px;margin:0 auto;padding:8px 8px 10px}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+h1{font-size:17px;margin:0}
+.bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+button,select{background:var(--ui);color:var(--uit);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 10px;font-size:14px;cursor:pointer}
+select{max-width:200px}select option{color:#000}
+button:disabled{opacity:.4}
+.stat{font-size:14px;opacity:.9;padding:0 2px}
+details{font-size:13px;opacity:.9;margin-bottom:6px;line-height:1.45}
+summary{cursor:pointer}
+.lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;margin:0 0 3px}
+.dock{display:grid;gap:6px;align-items:start;margin-bottom:8px}
+.row{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;align-items:start}
+.slot{position:relative;aspect-ratio:5/7;border:2px dashed var(--slot);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:clamp(11px,3vw,18px);color:var(--slot);font-weight:700}
+.lane{position:relative;border-radius:6px}
+.lane .slot{position:absolute;left:0;right:0}
+.card{container-type:inline-size;position:absolute;left:0;right:0;aspect-ratio:5/7;border-radius:6px;background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.4);font-weight:700;overflow:hidden;touch-action:none;cursor:grab}
+.card.rel{position:relative}
+.card.red{color:var(--red)}
+.card.alt{color:#6b3fb5}
+.card .r{position:absolute;top:2px;left:4px;font-size:var(--rfs,min(26cqw,22px));line-height:1;white-space:nowrap;letter-spacing:-.03em}
+.card .s{position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);font-size:48cqw;line-height:1;opacity:.9}
+.card .s.f{font-size:64cqw;font-family:Georgia,'Times New Roman',serif;opacity:1}
+.card .ss{position:absolute;right:4px;bottom:3px;font-size:min(22cqw,18px);line-height:1}
+.card.down{background:repeating-linear-gradient(45deg,var(--back),var(--back) 6px,var(--back2) 6px,var(--back2) 12px);color:#fff}
+.card.down *{display:none}
+.card.sel{outline:3px solid var(--sel);z-index:50}
+.lane.ok,.slot.ok,.card.ok{outline:2px dashed #8dffb0;outline-offset:2px}
+.cnt{display:block!important;position:absolute;inset:auto 0 28%;text-align:center;font-size:30cqw;text-shadow:0 1px 2px #000}
+.ghost{position:fixed;z-index:999;pointer-events:none;opacity:.93}
+.ghost .card{box-shadow:0 6px 14px rgba(0,0,0,.5)}
+#msg{text-align:center;font-size:18px;font-weight:700;min-height:26px;margin-top:6px}
+</style></head><body><div class="wrap" id="wrap">
+<header><h1>♠ Flipflop Spades</h1>
+<div class="bar"><select id="mode" aria-label="Game mode"></select><span class="stat" id="stat"></span><button id="undo">Undo</button><button id="reset">Reset</button><button id="new">New</button></div></header>
+<details><summary>How to play</summary>
+Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 30 cards. Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation.
+</details>
+<div class="lbl">Foundations A→K &nbsp;·&nbsp; Reserve &nbsp;·&nbsp; Stock</div>
+<div class="dock" id="dock"></div>
+<div class="row" id="lanes"></div>
+<div id="msg"></div></div>
+<script>
+/* ---------- CONFIG: change these to extend the game ---------- */
+const SUITS={S:{sym:'♠',red:false},H:{sym:'♥',red:true},D:{sym:'♦',red:true},C:{sym:'♣',red:false},X:{sym:'★',red:false,cls:'alt'}};
+const CONFIG={
+  suits:['S','S','S','S','S'],      // one entry per 13-card set; e.g. ['S','H','D','C','S']
+  hiddenPerLane:[5,5,5,4,4],        // face-down cards per lane (each lane also gets 1 face-up)
+  reserveCount:2,
+  foundationCount:5,
+  maxLane:30,                       // a lane can never hold more than this many cards
+  laneSameSuit:false,               // true => lane stacking also requires matching suit
+  foundationSameSuit:true,          // foundation builds must match the suit of its Ace
+};
+const MODES={
+  classic:{label:'Classic · 5 sets of ♠ (65 cards)',cfg:{suits:['S','S','S','S','S'],hiddenPerLane:[5,5,5,4,4]}},
+  two:{label:'Two suits · ♠♥ ×2 (52 cards)',cfg:{suits:['S','H','S','H'],hiddenPerLane:[4,4,4,4,4]}},
+  five:{label:'Five suits · ♠♥♦♣★ (65 cards)',cfg:{suits:['S','H','D','C','X'],hiddenPerLane:[5,5,5,4,4]}},
+};
+/* ---------- Rules (the only place rank/suit logic lives) ---------- */
+const Rules={
+  canStackOnLane(m,top){return !top||(Math.abs(m.r-top.r)==1&&(!CONFIG.laneSameSuit||m.suit==top.suit))},
+  canPlaceOnFoundation(m,top){
+    if(!top)return m.r==1;
+    return m.r==top.r+1&&(!CONFIG.foundationSameSuit||m.suit==top.suit);
+  },
+  validRun(cards,whole){ // cards: array of lane cards from the picked card down to the end of the lane
+    if(cards.some(c=>!c.up))return false;
+    if(cards.length<2)return true;
+    if(cards.every((c,k)=>c.suit==cards[0].suit&&(k==0||Math.abs(c.r-cards[k-1].r)==1)))return true;
+    const d=cards[1].r-cards[0].r;
+    if(Math.abs(d)!=1)return false;
+    for(let k=1;k<cards.length;k++){
+      if(cards[k].r-cards[k-1].r!=d)return false;
+      if(CONFIG.laneSameSuit&&cards[k].suit!=cards[0].suit)return false;
+    }
+    return true;
+  }
+};
+const L=['','A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const $=id=>document.getElementById(id);
+let S,sel,hist,suppress=false,clicks=0,initial='';
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
+function newGame(){
+  const deck=[];
+  CONFIG.suits.forEach((s,k)=>{for(let r=1;r<=13;r++)deck.push({id:k+'-'+r,suit:s,r,up:false})});
+  shuffle(deck);
+  S={lanes:[],found:Array.from({length:CONFIG.foundationCount},()=>[]),reserve:[],stock:[]};
+  CONFIG.hiddenPerLane.forEach(h=>{const a=deck.splice(0,h+1);a[a.length-1].up=true;S.lanes.push(a)});
+  for(let i=0;i<CONFIG.reserveCount;i++){const c=deck.shift();c.up=true;S.reserve.push(c)}
+  S.stock=deck;initial=JSON.stringify(S);sel=null;hist=[];clicks=0;$('msg').textContent='';render();
+}
+const snap=()=>{hist.push(JSON.stringify(S));clicks++};
+function undo(){if(!hist.length)return;S=JSON.parse(hist.pop());clicks++;sel=null;$('msg').textContent='';render()}
+function selCards(s=sel){
+  if(!s)return[];
+  if(s.t=='lane')return S.lanes[s.c].slice(s.i);
+  if(s.t=='found')return S.found[s.f].slice(-1);
+  return S.reserve[s.r]?[S.reserve[s.r]]:[];
+}
+function removeSel(){
+  if(sel.t=='lane'){const l=S.lanes[sel.c];const m=l.splice(sel.i);if(l.length)l[l.length-1].up=true;return m}
+  if(sel.t=='found')return [S.found[sel.f].pop()];
+  const rc=S.reserve[sel.r];S.reserve[sel.r]=null;return [rc];
+}
+function base(c,i){return i==0||!S.lanes[c][i-1].up} // first face-up card of a lane
+function canLane(c){
+  const m=selCards();if(!m.length)return false;
+  if(sel.t=='lane'&&sel.c==c)return false;
+  const l=S.lanes[c];
+  if(l.length+m.length>CONFIG.maxLane)return false;
+  return Rules.validRun(m,sel.t=='lane'&&base(sel.c,sel.i))&&Rules.canStackOnLane(m[0],l[l.length-1]);
+}
+function canFound(f){
+  const m=selCards();if(m.length!=1)return false;
+  if(sel.t=='found'&&sel.f==f)return false;
+  const fd=S.found[f];
+  return Rules.canPlaceOnFoundation(m[0],fd[fd.length-1]);
+}
+function flash(t){const m=$('msg');m.textContent=t;clearTimeout(flash.h);flash.h=setTimeout(()=>{if(!m.textContent.startsWith('🎉'))m.textContent=''},1200)}
+function tryLane(c){if(!canLane(c))return false;snap();S.lanes[c].push(...removeSel());sel=null;return true}
+function tryFound(f){if(!canFound(f))return false;snap();S.found[f].push(...removeSel());sel=null;return true}
+function autoFound(){
+  const m=selCards();if(m.length!=1)return false;
+  const tops=S.found.map(f=>f[f.length-1]);
+  let f=tops.findIndex(t=>t&&Rules.canPlaceOnFoundation(m[0],t));
+  if(f<0)f=tops.findIndex(t=>!t&&Rules.canPlaceOnFoundation(m[0],t));
+  return f>=0&&tryFound(f);
+}
+function sameSel(a,b){return a&&b&&a.t==b.t&&a.c==b.c&&a.i==b.i&&a.f==b.f&&a.r==b.r}
+function tap(n){ // n = {t,c,i,f,r}
+  if(suppress)return;
+  if(sel&&!sameSel(sel,n)){
+    if((n.t=='lane'&&tryLane(n.c))||(n.t=='found'&&tryFound(n.f))){return finish()}
+  }
+  if(sameSel(sel,n)){if(!autoFound())sel=null;return finish()}
+  let ok=false;
+  if(n.t=='lane')ok=n.i>=0&&Rules.validRun(S.lanes[n.c].slice(n.i),base(n.c,n.i));
+  if(n.t=='found')ok=S.found[n.f].length>0;
+  if(n.t=='res')ok=!!S.reserve[n.r];
+  const had=sel;sel=ok?n:null;
+  if(had&&!ok&&!sameSel(had,n))flash("Can't move there");
+  finish();
+}
+function finish(){render();
+  const tot=S.found.reduce((a,f)=>a+f.length,0);
+  if(tot==CONFIG.suits.length*13)$('msg').textContent='🎉 You cleared the whole deck!';
+}
+function deal(){
+  if(!S.stock.length)return;
+  if(S.lanes.every(l=>l.length>=CONFIG.maxLane)){flash('All lanes are full');return}
+  snap();
+  S.lanes.forEach(l=>{if(l.length<CONFIG.maxLane&&S.stock.length){const c=S.stock.pop();c.up=true;l.push(c)}});
+  sel=null;render();
+}
+/* ---------- Rendering ---------- */
+function cardEl(c,extra=''){
+  const d=document.createElement('div');
+  d.className='card'+(c.up?'':' down')+(SUITS[c.suit].red?' red':'')+(SUITS[c.suit].cls?' '+SUITS[c.suit].cls:'')+extra;
+  if(c.up){const sy=SUITS[c.suit].sym,face=c.r>10;
+    d.innerHTML=`<span class="r">${L[c.r]}${sy}</span><span class="s${face?' f':''}">${face?L[c.r]:sy}</span>`+(face?`<span class="ss">${sy}</span>`:'');}
+  return d;
+}
+function slotEl(txt=''){const d=document.createElement('div');d.className='slot';d.textContent=txt;return d}
+function buildDock(){
+  const D=$('dock');D.innerHTML='';
+  const fc=CONFIG.foundationCount,rc=CONFIG.reserveCount;
+  D.style.gridTemplateColumns=`repeat(${fc},1fr) 8px repeat(${rc+1},1fr)`;
+  S.found.forEach((f,i)=>{
+    const top=f[f.length-1];let el;
+    if(top)el=cardEl(top,' rel'+(sel&&sel.t=='found'&&sel.f==i?' sel':''));else el=slotEl('A');
+    el.dataset.found=i;if(top)el.dataset.n=JSON.stringify({t:'found',f:i});
+    if(sel&&canFound(i))el.classList.add('ok');
+    el.onclick=()=>tap({t:'found',f:i});D.appendChild(el);
+  });
+  D.appendChild(document.createElement('div'));
+  for(let k=0;k<rc;k++){
+    const c=S.reserve[k];let el;
+    if(c)el=cardEl(c,' rel'+(sel&&sel.t=='res'&&sel.r==k?' sel':''));else el=slotEl();
+    el.onclick=()=>tap({t:'res',r:k});if(c)el.dataset.n=JSON.stringify({t:'res',r:k});D.appendChild(el);
+  }
+  let st;
+  if(S.stock.length){st=cardEl({suit:CONFIG.suits[0],r:1,up:false},' rel');
+    st.insertAdjacentHTML('beforeend',`<span class="cnt">${S.stock.length}</span>`)}else st=slotEl('0');
+  st.onclick=()=>{if(!suppress)deal()};st.title='Deal a card onto each lane';D.appendChild(st);
+}
+function render(){
+  const VH=innerHeight||800,wrap=$('wrap');
+  buildDock();
+  const LN=$('lanes');LN.innerHTML='';
+  // Pick a card size at which the longest lane still shows readable rank strips without page scroll.
+  let wm=Math.min(640,innerWidth||640),w,h,upB,dnB,sc=1;
+  for(let it=0;it<12;it++){
+    wrap.style.maxWidth=wm+'px';
+    w=(LN.clientWidth-24)/5||70;h=w*1.4;
+    upB=Math.max(18,w*.36);dnB=Math.max(7,w*.14);
+    const room=Math.max(0,VH-(LN.getBoundingClientRect().top+scrollY)-h-56);
+    sc=1;
+    S.lanes.forEach(a=>{let g=0;a.forEach((c,i)=>{if(i<a.length-1)g+=c.up?upB:dnB});if(g>0)sc=Math.min(sc,room/g)});
+    if(upB*sc>=17||wm<=280)break;
+    wm=Math.max(280,wm*.93);
+  }
+  const up=Math.max(12,upB*sc),dn=Math.max(3.5,dnB*sc),norm=Math.min(.26*w,22);
+  S.lanes.forEach((a,c)=>{
+    const el=document.createElement('div');el.className='lane';
+    let y=0,last=0;
+    if(!a.length){const s=slotEl();s.style.top='0';el.appendChild(s)}
+    a.forEach((card,i)=>{
+      const d=cardEl(card,sel&&sel.t=='lane'&&sel.c==c&&i>=sel.i?' sel':'');
+      d.style.top=y+'px';d.dataset.n=JSON.stringify({t:'lane',c,i});
+      if(card.up&&i<a.length-1)d.style.setProperty('--rfs',Math.min(norm,Math.max(9,up-4))+'px');
+      d.onclick=e=>{e.stopPropagation();tap({t:'lane',c,i})};
+      el.appendChild(d);last=y;y+=card.up?up:dn;
+    });
+    el.style.height=(a.length?last+h:h)+'px';
+    el.dataset.lane=c;if(sel&&canLane(c))el.classList.add('ok');
+    el.onclick=()=>tap({t:'lane',c,i:-1});LN.appendChild(el);
+  });
+  $('stat').textContent=S.found.reduce((a,f)=>a+f.length,0)+'/'+CONFIG.suits.length*13+' · '+clicks+' clicks';
+  $('undo').disabled=!hist.length;$('reset').disabled=!hist.length;
+}
+/* ---------- Drag & drop (taps still work) ---------- */
+let drag=null,ghost=null;
+function validStart(n){
+  if(n.t=='lane')return Rules.validRun(S.lanes[n.c].slice(n.i),base(n.c,n.i));
+  if(n.t=='found')return S.found[n.f].length>0;
+  return !!S.reserve[n.r];
+}
+document.addEventListener('pointerdown',e=>{
+  if(e.button>0)return;
+  const el=e.target.closest('.card[data-n]');if(!el)return;
+  const n=JSON.parse(el.dataset.n);if(!validStart(n))return;
+  const r=el.getBoundingClientRect();
+  drag={n,x:e.clientX,y:e.clientY,ox:e.clientX-r.left,oy:e.clientY-r.top,w:r.width,go:false};
+});
+document.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  if(!drag.go){
+    if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<6)return;
+    drag.go=true;sel=drag.n;
+    try{document.body.setPointerCapture(e.pointerId)}catch(_){}
+    ghost=document.createElement('div');ghost.className='ghost';ghost.style.width=drag.w+'px';
+    const step=Math.max(18,drag.w*.36);
+    selCards().forEach((c,k)=>{const d=cardEl(c);d.style.top=k*step+'px';ghost.appendChild(d)});
+    document.body.appendChild(ghost);render();
+  }
+  ghost.style.left=(e.clientX-drag.ox)+'px';ghost.style.top=(e.clientY-drag.oy)+'px';
+});
+function endDrag(e,cancel){
+  if(!drag)return;
+  const d=drag;drag=null;
+  if(!d.go)return;
+  if(ghost){ghost.remove();ghost=null}
+  suppress=true;setTimeout(()=>suppress=false,60);
+  let ok=false,same=false;
+  if(!cancel){
+    const t=document.elementFromPoint(e.clientX,e.clientY);
+    const ln=t&&t.closest('[data-lane]'),fd=t&&t.closest('[data-found]');
+    if(ln){same=d.n.t=='lane'&&+ln.dataset.lane==d.n.c;ok=tryLane(+ln.dataset.lane)}
+    else if(fd)ok=tryFound(+fd.dataset.found);
+  }
+  if(!ok){sel=null;if(!cancel&&!same)flash("Can't move there")}
+  finish();
+}
+addEventListener('pointerup',e=>endDrag(e,false));
+addEventListener('pointercancel',e=>endDrag(e,true));
+$('undo').onclick=undo;
+let armed=0;
+$('new').onclick=()=>{
+  if(!hist.length||armed){armed=0;$('new').textContent='New';newGame();return}
+  armed=1;$('new').textContent='Sure?';setTimeout(()=>{armed=0;$('new').textContent='New'},2000);
+};
+let rArmed=0;
+$('reset').onclick=()=>{
+  if(!hist.length)return;
+  if(rArmed){rArmed=0;$('reset').textContent='Reset';S=JSON.parse(initial);sel=null;hist=[];clicks=0;$('msg').textContent='';render();return}
+  rArmed=1;$('reset').textContent='Sure?';setTimeout(()=>{rArmed=0;$('reset').textContent='Reset'},2000);
+};
+const MS=$('mode');
+for(const k in MODES){const o=document.createElement('option');o.value=k;o.textContent=MODES[k].label;MS.appendChild(o)}
+MS.onchange=()=>{Object.assign(CONFIG,MODES[MS.value].cfg);newGame()};
+MS.value='classic';
+addEventListener('resize',render);
+newGame();
+</script></body></html>
