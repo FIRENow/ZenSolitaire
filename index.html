@@ -45,7 +45,7 @@ summary{cursor:pointer}
 <header><h1>♠ Flipflop Spades</h1>
 <div class="bar"><select id="mode" aria-label="Game mode"></select><span class="stat" id="stat"></span><button id="undo">Undo</button><button id="reset">Reset</button><button id="new">New</button></div></header>
 <details><summary>How to play</summary>
-Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 30 cards. Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation.
+Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs of one suit that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 20 cards when you move (a deal always adds one). Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation.
 </details>
 <div class="lbl">Foundations A→K &nbsp;·&nbsp; Reserve &nbsp;·&nbsp; Stock</div>
 <div class="dock" id="dock"></div>
@@ -59,7 +59,7 @@ const CONFIG={
   hiddenPerLane:[5,5,5,4,4],        // face-down cards per lane (each lane also gets 1 face-up)
   reserveCount:2,
   foundationCount:5,
-  maxLane:30,                       // a lane can never hold more than this many cards
+  maxLane:20,                       // moves can't push a lane past this (a deal always adds a card)
   laneSameSuit:false,               // true => lane stacking also requires matching suit
   foundationSameSuit:true,          // foundation builds must match the suit of its Ace
 };
@@ -78,7 +78,8 @@ const Rules={
   validRun(cards,whole){ // cards: array of lane cards from the picked card down to the end of the lane
     if(cards.some(c=>!c.up))return false;
     if(cards.length<2)return true;
-    if(cards.every((c,k)=>c.suit==cards[0].suit&&(k==0||Math.abs(c.r-cards[k-1].r)==1)))return true;
+    if(cards.some(c=>c.suit!=cards[0].suit))return false; // a moving run must be a single suit
+    if(cards.every((c,k)=>k==0||Math.abs(c.r-cards[k-1].r)==1))return true;
     const d=cards[1].r-cards[0].r;
     if(Math.abs(d)!=1)return false;
     for(let k=1;k<cards.length;k++){
@@ -159,9 +160,8 @@ function finish(){render();
 }
 function deal(){
   if(!S.stock.length)return;
-  if(S.lanes.every(l=>l.length>=CONFIG.maxLane)){flash('All lanes are full');return}
   snap();
-  S.lanes.forEach(l=>{if(l.length<CONFIG.maxLane&&S.stock.length){const c=S.stock.pop();c.up=true;l.push(c)}});
+  S.lanes.forEach(l=>{if(S.stock.length){const c=S.stock.pop();c.up=true;l.push(c)}});
   sel=null;render();
 }
 /* ---------- Rendering ---------- */
