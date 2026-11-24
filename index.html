@@ -55,7 +55,7 @@ summary{cursor:pointer}
 <header><h1>♠ Flipflop Spades</h1>
 <div class="bar"><select id="mode" aria-label="Game mode"></select><span class="stat" id="stat"></span><button id="auto" hidden>Auto Complete</button><button id="undo">Undo</button><button id="reset">Reset</button><button id="new">New</button></div></header>
 <details><summary>How to play</summary>
-Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs of one suit that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 20 cards when you move (a deal always adds one). Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation. The small counter above each lane shows its length (it turns red when full). Once all cards are face-up, the stock is empty and every lane runs high-to-low, an Auto Complete button appears.
+Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs of one suit that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 20 cards when you move (a deal always adds one). Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation. You can also drop a whole run (like 9-8-7-6-5) onto a foundation whose top is the card just below it (the 4) and the run is added in order. The small counter above each lane shows its length (it turns red when full). Once all cards are face-up, the stock is empty and every lane runs high-to-low, an Auto Complete button appears.
 </details>
 <div class="lbl">Foundations A→K &nbsp;·&nbsp; Reserve &nbsp;·&nbsp; Stock</div>
 <div class="dock" id="dock"></div>
@@ -135,18 +135,42 @@ function laneCheck(c){ // 'ok' | 'full' | 'no'
   return l.length+m.length>CONFIG.maxLane?'full':'ok';
 }
 const canLane=c=>laneCheck(c)=='ok';
-const fullMsg=c=>`Lane ${c+1} is full (${CONFIG.maxLane} cards max), so nothing can be moved onto it. Move cards off it first. A deal can still add one.`;
-function canFound(f){
-  const m=selCards();if(m.length!=1)return false;
-  if(sel.t=='found'&&sel.f==f)return false;
-  const fd=S.found[f];
-  return Rules.canPlaceOnFoundation(m[0],fd[fd.length-1]);
+const nm=c=>L[c.r]+SUITS[c.suit].sym;
+function whyNot(kind,i){ // human-readable reason a move failed
+  const m=selCards();if(!m.length)return "Can't move there";
+  if(kind=='lane'){
+    const l=S.lanes[i],top=l[l.length-1];
+    if(top&&Math.abs(m[0].r-top.r)!=1)return `${nm(m[0])} can't go on ${nm(top)}: lane cards must be exactly one rank apart (K and A don't connect).`;
+    return "Can't move there";
+  }
+  const fd=S.found[i],top=fd[fd.length-1];
+  if(m.length>1&&sel.t!='lane')return "Only a single card can come back from there.";
+  if(!top)return m.length>1?"That foundation is empty, so a run must start (or end) with an Ace to go there.":`That foundation is empty, so it needs an Ace first, and ${nm(m[0])} isn't one.`;
+  if(top.r==13)return `That foundation is already complete (K${SUITS[top.suit].sym}).`;
+  const need=L[top.r+1]+SUITS[top.suit].sym;
+  return m.length>1?`That foundation ends on ${nm(top)}, so the next card must be ${need}. A run must be a single suit and continue in order from there (from one end).`:`That foundation ends on ${nm(top)}, so it needs ${need} next, and ${nm(m[0])} isn't it.`;
 }
+const fullMsg=c=>`Lane ${c+1} is full (${CONFIG.maxLane} cards max), so nothing can be moved onto it. Move cards off it first. A deal can still add one.`;
+function foundSeq(f){ // cards (in placing order) a selected run would add to foundation f, or null
+  const m=selCards();if(!m.length)return null;
+  if(sel.t=='found'&&sel.f==f)return null;
+  if(m.length>1&&sel.t!='lane')return null;
+  const fd=S.found[f];
+  // a run can be placed top-to-bottom (ascending run) or bottom-to-top (descending run, e.g. 9-8-7-6-5 on a 4)
+  for(const seq of [m,[...m].reverse()]){
+    let top=fd[fd.length-1],ok=true;
+    for(const c of seq){if(!Rules.canPlaceOnFoundation(c,top)){ok=false;break}top=c}
+    if(ok)return seq;
+  }
+  return null;
+}
+function canFound(f){return !!foundSeq(f)}
 function flash(t,ms=1200){const m=$('msg');m.textContent=t;clearTimeout(flash.h);flash.h=setTimeout(()=>{if(!m.textContent.startsWith('🎉'))m.textContent=''},ms)}
 function tryLane(c){if(!canLane(c))return false;snap();S.lanes[c].push(...removeSel());sel=null;return true}
-function tryFound(f){if(!canFound(f))return false;snap();S.found[f].push(...removeSel());sel=null;return true}
+function tryFound(f){const seq=foundSeq(f);if(!seq)return false;snap();removeSel();S.found[f].push(...seq);sel=null;return true}
 function autoFound(){
-  const m=selCards();if(m.length!=1)return false;
+  const m=selCards();if(!m.length)return false;
+  if(m.length>1){const g=S.found.findIndex((_,i)=>canFound(i));return g>=0&&tryFound(g)}
   const tops=S.found.map(f=>f[f.length-1]);
   let f=tops.findIndex(t=>t&&Rules.canPlaceOnFoundation(m[0],t));
   if(f<0)f=tops.findIndex(t=>!t&&Rules.canPlaceOnFoundation(m[0],t));
@@ -158,14 +182,17 @@ function tap(n){ // n = {t,c,i,f,r}
   if(sel&&!sameSel(sel,n)){
     if(n.t=='lane'&&laneCheck(n.c)=='full'){flash(fullMsg(n.c),2800);return finish()}
     if((n.t=='lane'&&tryLane(n.c))||(n.t=='found'&&tryFound(n.f))){return finish()}
+    if(n.t=='found'&&!(sel.t=='found'&&sel.f==n.f)){flash(whyNot('found',n.f),3400);return finish()}
   }
   if(sameSel(sel,n)){if(!autoFound())sel=null;return finish()}
   let ok=false;
   if(n.t=='lane')ok=n.i>=0&&Rules.validRun(S.lanes[n.c].slice(n.i),base(n.c,n.i));
   if(n.t=='found')ok=S.found[n.f].length>0;
   if(n.t=='res')ok=!!S.reserve[n.r];
-  const had=sel;sel=ok?n:null;
-  if(had&&!ok&&!sameSel(had,n))flash("Can't move there");
+  const had=sel,tgt=n.t=='found'?['found',n.f]:n.t=='lane'?['lane',n.c]:null;
+  const why=had&&!ok&&!sameSel(had,n)?(tgt?whyNot(tgt[0],tgt[1]):"Can't move there"):null;
+  sel=ok?n:null;
+  if(why)flash(why,3000);
   finish();
 }
 function finish(){render();
@@ -319,14 +346,14 @@ function endDrag(e,cancel){
   if(!d.go)return;
   if(ghost){ghost.remove();ghost=null}
   suppress=true;setTimeout(()=>suppress=false,60);
-  let ok=false,same=false,full=-1;
+  let ok=false,same=false,full=-1,why='';
   if(!cancel){
     const t=document.elementFromPoint(e.clientX,e.clientY);
     const ln=t&&t.closest('[data-lane]'),fd=t&&t.closest('[data-found]');
-    if(ln){const c=+ln.dataset.lane;same=d.n.t=='lane'&&c==d.n.c;if(laneCheck(c)=='full')full=c;ok=tryLane(c)}
-    else if(fd)ok=tryFound(+fd.dataset.found);
+    if(ln){const c=+ln.dataset.lane;same=d.n.t=='lane'&&c==d.n.c;const lc=laneCheck(c);if(lc=='full')full=c;else if(lc=='no'&&!same)why=whyNot('lane',c);ok=tryLane(c)}
+    else if(fd){const f=+fd.dataset.found;if(!canFound(f))why=whyNot('found',f);ok=tryFound(f)}
   }
-  if(!ok){sel=null;if(!cancel&&!same){if(full>=0)flash(fullMsg(full),2800);else flash("Can't move there")}}
+  if(!ok){sel=null;if(!cancel&&!same){if(full>=0)flash(fullMsg(full),2800);else flash(why||"Can't move there",why?3400:1200)}}
   finish();
 }
 addEventListener('pointerup',e=>endDrag(e,false));
