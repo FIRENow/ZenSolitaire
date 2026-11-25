@@ -18,6 +18,14 @@ select{max-width:200px}select option{color:#000}
 button:disabled{opacity:.4}
 #auto{background:#f5b800;color:#111;font-weight:700;border-color:#f5b800}
 button[hidden]{display:none}
+.card.hintsrc{outline:3px solid #ffd54a;animation:hintpulse 1s ease-in-out infinite;z-index:40}
+.lane.hintdst,.slot.hintdst,.card.hintdst{outline:3px dashed #ffd54a;outline-offset:2px;animation:hintpulse 1s ease-in-out infinite}
+@keyframes hintpulse{50%{outline-color:rgba(255,213,74,.2)}}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:990}
+body.flashing::after{animation:stuckflash .55s ease-in-out 3}
+@keyframes stuckflash{0%,100%{box-shadow:inset 0 0 0 0 rgba(255,70,70,0)}50%{box-shadow:inset 0 0 0 14px rgba(255,70,70,.65)}}
+#stuck{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:950;background:#b3261e;color:#fff;font-weight:700;padding:10px 14px;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.45);text-align:center;max-width:92vw;font-size:14px}
+#stuck button{margin-left:8px}
 .stat{font-size:14px;opacity:.9;padding:0 2px}
 details{font-size:13px;opacity:.9;margin-bottom:6px;line-height:1.45}
 summary{cursor:pointer}
@@ -40,6 +48,8 @@ summary{cursor:pointer}
 .card.sel{outline:3px solid var(--sel);z-index:50}
 .lane.ok,.slot.ok,.card.ok{outline:2px dashed #8dffb0;outline-offset:2px}
 .lane.full{outline:2px dashed #ff6b6b;outline-offset:2px}
+.lane.rev{outline:2px dashed #c9a0ff;outline-offset:2px}
+#rev{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:900;background:#7c4dff;color:#fff;font-weight:700;border:0;padding:10px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.45)}
 .lens{margin-bottom:3px}
 .len{font-size:10px;text-align:center;opacity:.9;line-height:1.1;white-space:nowrap}
 .len i{display:block;height:3px;border-radius:2px;background:rgba(255,255,255,.2);margin-top:2px;overflow:hidden}
@@ -53,15 +63,17 @@ summary{cursor:pointer}
 #msg{text-align:center;font-size:18px;font-weight:700;min-height:26px;margin-top:6px}
 </style></head><body><div class="wrap" id="wrap">
 <header><h1>♠ Flipflop Spades</h1>
-<div class="bar"><select id="mode" aria-label="Game mode"></select><span class="stat" id="stat"></span><button id="auto" hidden>Auto Complete</button><button id="undo">Undo</button><button id="reset">Reset</button><button id="new">New</button></div></header>
+<div class="bar"><select id="mode" aria-label="Game mode"></select><span class="stat" id="stat"></span><button id="auto" hidden>Auto Complete</button><button id="hint">Hint</button><button id="undo">Undo</button><button id="reset">Reset</button><button id="new">New</button></div></header>
 <details><summary>How to play</summary>
-Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs of one suit that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 20 cards when you move (a deal always adds one). Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation. You can also drop a whole run (like 9-8-7-6-5) onto a foundation whose top is the card just below it (the 4) and the run is added in order. The small counter above each lane shows its length (it turns red when full). Once all cards are face-up, the stock is empty and every lane runs high-to-low, an Auto Complete button appears.
+Build each foundation (top left) from Ace up to King. In the lanes, place a card on one rank higher or lower; runs of one suit that go steadily up or down move together, a lane's face-up cards of a single suit also move together even when they zigzag (like 7-6-5-6-5-6), from any card in the pile. Any card can go in an empty lane, and a lane holds at most 20 cards when you move (a deal always adds one). Foundation tops can be pulled back down. Reserve cards (top right) can be played into the game but never returned. Tap the stock to deal one card onto each lane. Drag a card to where it should go, or tap it and then tap the destination (valid spots get a green outline). Tap a selected card again to send it to a foundation. You can also drop a whole run (like 9-8-7-6-5) onto a foundation whose top is the card just below it (the 4) and the run is added in order. Reverse move: select a run whose cards are one rank apart (any suits, even mixed) and tap a lane where its bottom card fits, or an empty lane. The run moves in one click with its order flipped (purple outline = reverse-legal lane), or press the purple Reverse button to pick the spot for you. The small counter above each lane shows its length (it turns red when full). Once all cards are face-up, the stock is empty and every lane runs high-to-low, an Auto Complete button appears.
 </details>
 <div class="lbl">Foundations A→K &nbsp;·&nbsp; Reserve &nbsp;·&nbsp; Stock</div>
 <div class="dock" id="dock"></div>
 <div class="row lens" id="lens"></div>
 <div class="row" id="lanes"></div>
 <div id="msg"></div></div>
+<button id="rev" hidden></button>
+<div id="stuck" hidden><span id="stuckTxt"></span><button id="stuckUndo">Undo</button></div>
 <script>
 /* ---------- CONFIG: change these to extend the game ---------- */
 const SUITS={S:{sym:'♠',red:false},H:{sym:'♥',red:true},D:{sym:'♦',red:true},C:{sym:'♣',red:false},X:{sym:'★',red:false,cls:'alt'}};
@@ -111,10 +123,10 @@ function newGame(){
   S={lanes:[],found:Array.from({length:CONFIG.foundationCount},()=>[]),reserve:[],stock:[]};
   CONFIG.hiddenPerLane.forEach(h=>{const a=deck.splice(0,h+1);a[a.length-1].up=true;S.lanes.push(a)});
   for(let i=0;i<CONFIG.reserveCount;i++){const c=deck.shift();c.up=true;S.reserve.push(c)}
-  S.stock=deck;initial=JSON.stringify(S);sel=null;hist=[];clicks=0;$('msg').textContent='';render();
+  S.stock=deck;initial=JSON.stringify(S);sel=null;hist=[];clicks=0;stamp++;$('msg').textContent='';render();
 }
-const snap=()=>{hist.push(JSON.stringify(S));clicks++};
-function undo(){if(!hist.length||autoTimer)return;S=JSON.parse(hist.pop());clicks++;sel=null;$('msg').textContent='';render()}
+const snap=()=>{hist.push(JSON.stringify(S));clicks++;stamp++};
+function undo(){if(!hist.length||autoTimer)return;stamp++;S=JSON.parse(hist.pop());clicks++;sel=null;$('msg').textContent='';render()}
 function selCards(s=sel){
   if(!s)return[];
   if(s.t=='lane')return S.lanes[s.c].slice(s.i);
@@ -127,6 +139,22 @@ function removeSel(){
   const rc=S.reserve[sel.r];S.reserve[sel.r]=null;return [rc];
 }
 function base(c,i){return i==0||!S.lanes[c][i-1].up} // first face-up card of a lane
+/* ----- Reverse moves: a +/-1 chain (any suits) can be moved bottom-to-top, i.e. order flipped, in one click ----- */
+function chainOk(cards){return cards.length>1&&cards.every((c,k)=>c.up&&(k==0||Math.abs(c.r-cards[k-1].r)==1))}
+function pickable(c,i){const s=S.lanes[c].slice(i);return Rules.validRun(s,base(c,i))||chainOk(s)}
+function revCheck(c){ // 'ok' | 'full' | 'no': may the selected chain go onto lane c reversed?
+  if(!sel||sel.t!='lane'||sel.c==c)return 'no';
+  const m=selCards();if(!chainOk(m))return 'no';
+  const l=S.lanes[c];
+  if(!Rules.canStackOnLane(m[m.length-1],l[l.length-1]))return 'no';
+  return l.length+m.length>CONFIG.maxLane?'full':'ok';
+}
+function tryReverse(c){if(revCheck(c)!='ok')return false;snap();const m=removeSel();S.lanes[c].push(...m.reverse());sel=null;return true}
+function revBest(){ // best lane for the one-click Reverse button: an adjoining card first, else an empty lane
+  if(autoTimer||!sel||sel.t!='lane')return -1;
+  const ok=S.lanes.map((_,c)=>c).filter(c=>revCheck(c)=='ok');
+  return ok.find(c=>S.lanes[c].length)??(ok.length?ok[0]:-1);
+}
 function laneCheck(c){ // 'ok' | 'full' | 'no'
   const m=selCards();if(!m.length)return 'no';
   if(sel.t=='lane'&&sel.c==c)return 'no';
@@ -182,11 +210,16 @@ function tap(n){ // n = {t,c,i,f,r}
   if(sel&&!sameSel(sel,n)){
     if(n.t=='lane'&&laneCheck(n.c)=='full'){flash(fullMsg(n.c),2800);return finish()}
     if((n.t=='lane'&&tryLane(n.c))||(n.t=='found'&&tryFound(n.f))){return finish()}
+    if(n.t=='lane'){
+      const rv=revCheck(n.c);
+      if(rv=='ok'){const k=selCards().length;tryReverse(n.c);flash(`Moved ${k} cards in reverse (order flipped).`,2200);return finish()}
+      if(rv=='full'){flash(fullMsg(n.c),2800);return finish()}
+    }
     if(n.t=='found'&&!(sel.t=='found'&&sel.f==n.f)){flash(whyNot('found',n.f),3400);return finish()}
   }
   if(sameSel(sel,n)){if(!autoFound())sel=null;return finish()}
   let ok=false;
-  if(n.t=='lane')ok=n.i>=0&&Rules.validRun(S.lanes[n.c].slice(n.i),base(n.c,n.i));
+  if(n.t=='lane')ok=n.i>=0&&pickable(n.c,n.i);
   if(n.t=='found')ok=S.found[n.f].length>0;
   if(n.t=='res')ok=!!S.reserve[n.r];
   const had=sel,tgt=n.t=='found'?['found',n.f]:n.t=='lane'?['lane',n.c]:null;
@@ -215,31 +248,33 @@ function cardEl(c,extra=''){
 }
 function slotEl(txt=''){const d=document.createElement('div');d.className='slot';d.textContent=txt;return d}
 function buildDock(){
-  const D=$('dock');D.innerHTML='';
+  const D=$('dock');D.innerHTML='';const hh=curHint();
   const fc=CONFIG.foundationCount,rc=CONFIG.reserveCount;
   D.style.gridTemplateColumns=`repeat(${fc},1fr) 8px repeat(${rc+1},1fr)`;
   S.found.forEach((f,i)=>{
     const top=f[f.length-1];let el;
     if(top)el=cardEl(top,' rel'+(sel&&sel.t=='found'&&sel.f==i?' sel':''));else el=slotEl('A');
-    el.dataset.found=i;if(top)el.dataset.n=JSON.stringify({t:'found',f:i});
+    el.dataset.found=i;if(hh&&hh.dst&&hh.dst.k=='found'&&hh.dst.i==i)el.classList.add('hintdst');if(top)el.dataset.n=JSON.stringify({t:'found',f:i});
     if(sel&&canFound(i))el.classList.add('ok');
     el.onclick=()=>tap({t:'found',f:i});D.appendChild(el);
   });
   D.appendChild(document.createElement('div'));
   for(let k=0;k<rc;k++){
     const c=S.reserve[k];let el;
-    if(c)el=cardEl(c,' rel'+(sel&&sel.t=='res'&&sel.r==k?' sel':''));else el=slotEl();
+    if(c)el=cardEl(c,' rel'+(sel&&sel.t=='res'&&sel.r==k?' sel':'')+(hh&&hh.src&&hh.src.t=='res'&&hh.src.r==k?' hintsrc':''));else el=slotEl();
     el.onclick=()=>tap({t:'res',r:k});if(c)el.dataset.n=JSON.stringify({t:'res',r:k});D.appendChild(el);
   }
   let st;
   if(S.stock.length){st=cardEl({suit:CONFIG.suits[0],r:1,up:false},' rel');
     st.insertAdjacentHTML('beforeend',`<span class="cnt">${S.stock.length}</span>`)}else st=slotEl('0');
+  if(hh&&hh.deal)st.classList.add('hintdst');
   st.onclick=()=>{if(!suppress)deal()};st.title='Deal a card onto each lane';D.appendChild(st);
 }
 function render(){
   const VH=innerHeight||800,wrap=$('wrap');
   buildDock();
   const LN=$('lanes');LN.innerHTML='';
+  const hs=curHint();
   const LE=$('lens');LE.innerHTML='';
   S.lanes.forEach(a=>{
     const n=a.length,mx=CONFIG.maxLane,d=document.createElement('div');
@@ -265,20 +300,93 @@ function render(){
     let y=0,last=0;
     if(!a.length){const s=slotEl();s.style.top='0';el.appendChild(s)}
     a.forEach((card,i)=>{
-      const d=cardEl(card,sel&&sel.t=='lane'&&sel.c==c&&i>=sel.i?' sel':'');
+      const d=cardEl(card,(sel&&sel.t=='lane'&&sel.c==c&&i>=sel.i?' sel':'')+(hs&&hs.src&&hs.src.t=='lane'&&hs.src.c==c&&i>=hs.src.i?' hintsrc':''));
       d.style.top=y+'px';d.dataset.n=JSON.stringify({t:'lane',c,i});
       if(card.up&&i<a.length-1)d.style.setProperty('--rfs',Math.min(norm,Math.max(9,up-4))+'px');
       d.onclick=e=>{e.stopPropagation();tap({t:'lane',c,i})};
       el.appendChild(d);last=y;y+=card.up?up:dn;
     });
     el.style.height=(a.length?last+h:h)+'px';
-    el.dataset.lane=c;if(sel){const lc=laneCheck(c);if(lc=='ok')el.classList.add('ok');else if(lc=='full')el.classList.add('full')}
+    el.dataset.lane=c;if(hs&&hs.dst&&hs.dst.k=='lane'&&hs.dst.i==c)el.classList.add('hintdst');if(sel){const lc=laneCheck(c);if(lc=='ok')el.classList.add('ok');else if(lc=='full')el.classList.add('full');else if(revCheck(c)=='ok')el.classList.add('rev')}
     el.onclick=()=>tap({t:'lane',c,i:-1});LN.appendChild(el);
   });
   $('stat').textContent=S.found.reduce((a,f)=>a+f.length,0)+'/'+CONFIG.suits.length*13+' · '+clicks+' clicks';
-  $('undo').disabled=!hist.length||!!autoTimer;$('reset').disabled=!hist.length||!!autoTimer;
+  $('undo').disabled=!hist.length||!!autoTimer;$('reset').disabled=!hist.length||!!autoTimer;$('hint').disabled=!!autoTimer;
   $('auto').hidden=!autoReady();
+  const rt=revBest(),RB=$('rev');
+  RB.hidden=rt<0;
+  updateStuck();
+  if(rt>=0)RB.textContent=`⇄ Reverse ${selCards().length} cards onto ${S.lanes[rt].length?'lane '+(rt+1):'empty lane '+(rt+1)}`;
 }
+/* ---------- Hints & stuck detection ---------- */
+let stamp=0,hint=null,wasStuck=false;
+const curHint=()=>hint&&hint.stamp==stamp?hint:null;
+// every legal move in the current position (sel is borrowed temporarily and restored)
+function legalMoves(opts={}){
+  const saved=sel,out=[],sources=[];
+  S.lanes.forEach((l,c)=>l.forEach((_,i)=>{if(pickable(c,i))sources.push({t:'lane',c,i})}));
+  S.reserve.forEach((x,r)=>{if(x)sources.push({t:'res',r})});
+  if(opts.pull)S.found.forEach((f,i)=>{if(f.length)sources.push({t:'found',f:i})});
+  for(const s of sources){
+    sel=s;
+    const n=selCards().length,pull=s.t=='found';
+    const reveals=s.t=='lane'&&s.i>0&&!S.lanes[s.c][s.i-1].up;
+    if(!pull)S.found.forEach((_,f)=>{if(canFound(f))out.push({src:s,dst:{k:'found',i:f},rev:false,n:foundSeq(f).length,score:0,reveals})});
+    S.lanes.forEach((l,c)=>{
+      if(s.t=='lane'&&s.c==c)return;
+      const lc=laneCheck(c),rc=lc=='ok'?'no':revCheck(c);
+      if(lc!='ok'&&rc!='ok')return;
+      const rev=lc!='ok';
+      if(!rev&&s.t=='lane'&&s.i==0&&!l.length)return; // moving a whole lane into an empty lane changes nothing
+      let sc=pull?9:reveals?1:s.t=='res'?2:rev?4:3;
+      if(!l.length)sc+=1;
+      out.push({src:s,dst:{k:'lane',i:c},rev,n,score:sc,pull,reveals});
+    });
+  }
+  sel=saved;return out;
+}
+function hintMoves(){
+  const best=new Map();
+  for(const m of legalMoves()){
+    const key=(m.src.t=='lane'?'l'+m.src.c:'r'+m.src.r)+'>'+m.dst.k+m.dst.i;
+    const o=best.get(key);
+    if(!o||m.score<o.score||(m.score==o.score&&m.n>o.n))best.set(key,m);
+  }
+  const list=[...best.values()].sort((a,b)=>a.score-b.score||b.n-a.n);
+  if(S.stock.length)list.push({deal:true,score:99});
+  return list;
+}
+function hintText(m,k,total){
+  const pre=`Hint ${k+1}/${total}: `;
+  if(m.deal)return pre+'no better card move, so deal from the stock.';
+  const cs=selCards(m.src);
+  const what=cs.length>1?`${nm(cs[0])}…${nm(cs[cs.length-1])} (${cs.length} cards)`:nm(cs[0]);
+  const where=m.dst.k=='found'?'a foundation':`lane ${m.dst.i+1}`;
+  return `${pre}move ${what}${m.src.t=='res'?' from the reserve':''} to ${where}${m.rev?' in reverse':''}${m.reveals?', uncovering a hidden card':''}.`;
+}
+function isStuck(){
+  if(autoTimer||!S||S.stock.length||foundTotal()>=CONFIG.suits.length*13||autoReady())return false;
+  return legalMoves().length==0;
+}
+function updateStuck(){
+  const st=isStuck();
+  $('stuck').hidden=!st;
+  if(st){
+    const pull=legalMoves({pull:true}).some(m=>m.pull);
+    $('stuckTxt').textContent='🚫 No legal moves left'+(pull?' (only pulling a card back from a foundation remains)':'')+'.';
+    if(!wasStuck){document.body.classList.add('flashing');setTimeout(()=>document.body.classList.remove('flashing'),1800)}
+  }
+  wasStuck=st;
+}
+$('hint').onclick=()=>{
+  if(autoTimer)return;
+  const list=hintMoves();
+  if(!list.length){hint=null;flash(isStuck()?'No legal moves left. Try Undo or Reset.':'No card moves available.',3200);render();return}
+  const h=curHint(),k=h?(h.k+1)%list.length:0;
+  hint={...list[k],k,stamp};sel=null;
+  flash(hintText(list[k],k,list.length),4500);render();
+};
+$('stuckUndo').onclick=undo;
 /* ---------- Auto Complete ---------- */
 // Available once every card is face-up, the stock is empty and each lane runs high-to-low (smallest at the bottom).
 // Then the lowest remaining card is always reachable, so everything can be sent to the foundations.
@@ -313,10 +421,15 @@ function autoComplete(){
   render();
 }
 $('auto').onclick=autoComplete;
+$('rev').onclick=()=>{
+  const t=revBest();if(t<0)return;
+  const k=selCards().length;tryReverse(t);
+  flash(`Moved ${k} cards in reverse (order flipped).`,2200);finish();
+};
 /* ---------- Drag & drop (taps still work) ---------- */
 let drag=null,ghost=null;
 function validStart(n){
-  if(n.t=='lane')return Rules.validRun(S.lanes[n.c].slice(n.i),base(n.c,n.i));
+  if(n.t=='lane')return pickable(n.c,n.i);
   if(n.t=='found')return S.found[n.f].length>0;
   return !!S.reserve[n.r];
 }
@@ -346,14 +459,17 @@ function endDrag(e,cancel){
   if(!d.go)return;
   if(ghost){ghost.remove();ghost=null}
   suppress=true;setTimeout(()=>suppress=false,60);
-  let ok=false,same=false,full=-1,why='';
+  let ok=false,same=false,full=-1,why='',rev=false,revN=0;
   if(!cancel){
     const t=document.elementFromPoint(e.clientX,e.clientY);
     const ln=t&&t.closest('[data-lane]'),fd=t&&t.closest('[data-found]');
-    if(ln){const c=+ln.dataset.lane;same=d.n.t=='lane'&&c==d.n.c;const lc=laneCheck(c);if(lc=='full')full=c;else if(lc=='no'&&!same)why=whyNot('lane',c);ok=tryLane(c)}
+    if(ln){const c=+ln.dataset.lane;same=d.n.t=='lane'&&c==d.n.c;const lc=laneCheck(c);if(lc=='full')full=c;else if(lc=='no'&&!same){const rc=revCheck(c);if(rc=='full')full=c;else if(rc=='no')why=whyNot('lane',c)}
+      ok=tryLane(c);
+      if(!ok&&lc!='full'&&revCheck(c)=='ok'){revN=selCards().length;ok=tryReverse(c);rev=ok}}
     else if(fd){const f=+fd.dataset.found;if(!canFound(f))why=whyNot('found',f);ok=tryFound(f)}
   }
   if(!ok){sel=null;if(!cancel&&!same){if(full>=0)flash(fullMsg(full),2800);else flash(why||"Can't move there",why?3400:1200)}}
+  if(ok&&rev)flash(`Moved ${revN} cards in reverse (order flipped).`,2200);
   finish();
 }
 addEventListener('pointerup',e=>endDrag(e,false));
@@ -368,7 +484,7 @@ $('new').onclick=()=>{
 let rArmed=0;
 $('reset').onclick=()=>{
   if(!hist.length||autoTimer)return;
-  if(rArmed){rArmed=0;$('reset').textContent='Reset';S=JSON.parse(initial);sel=null;hist=[];clicks=0;$('msg').textContent='';render();return}
+  if(rArmed){rArmed=0;$('reset').textContent='Reset';S=JSON.parse(initial);sel=null;hist=[];clicks=0;stamp++;$('msg').textContent='';render();return}
   rArmed=1;$('reset').textContent='Sure?';setTimeout(()=>{rArmed=0;$('reset').textContent='Reset'},2000);
 };
 const MS=$('mode');
