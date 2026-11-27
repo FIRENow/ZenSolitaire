@@ -173,10 +173,10 @@ function whyNot(kind,i){ // human-readable reason a move failed
   }
   const fd=S.found[i],top=fd[fd.length-1];
   if(m.length>1&&sel.t!='lane')return "Only a single card can come back from there.";
-  if(!top)return m.length>1?"That foundation is empty, so a run must start (or end) with an Ace to go there.":`That foundation is empty, so it needs an Ace first, and ${nm(m[0])} isn't one.`;
+  if(!top)return m.length>1?"That foundation is empty, so a run must end with an Ace (its bottom card) to go there.":`That foundation is empty, so it needs an Ace first, and ${nm(m[0])} isn't one.`;
   if(top.r==13)return `That foundation is already complete (K${SUITS[top.suit].sym}).`;
   const need=L[top.r+1]+SUITS[top.suit].sym;
-  return m.length>1?`That foundation ends on ${nm(top)}, so the next card must be ${need}. A run must be a single suit and continue in order from there (from one end).`:`That foundation ends on ${nm(top)}, so it needs ${need} next, and ${nm(m[0])} isn't it.`;
+  return m.length>1?`That foundation ends on ${nm(top)}, so the next card must be ${need}. A run must be a single suit, and its bottom card (the exposed one) must be that next card, with the rest following in order.`:`That foundation ends on ${nm(top)}, so it needs ${need} next, and ${nm(m[0])} isn't it.`;
 }
 const fullMsg=c=>`Lane ${c+1} is full (${CONFIG.maxLane} cards max), so nothing can be moved onto it. Move cards off it first. A deal can still add one.`;
 function foundSeq(f){ // cards (in placing order) a selected run would add to foundation f, or null
@@ -184,8 +184,8 @@ function foundSeq(f){ // cards (in placing order) a selected run would add to fo
   if(sel.t=='found'&&sel.f==f)return null;
   if(m.length>1&&sel.t!='lane')return null;
   const fd=S.found[f];
-  // a run can be placed top-to-bottom (ascending run) or bottom-to-top (descending run, e.g. 9-8-7-6-5 on a 4)
-  for(const seq of [m,[...m].reverse()]){
+  // cards leave a pile from the bottom (the exposed card) first, so a run goes up bottom-to-top, e.g. 9-8-7-6-5 onto a 4 adds 5,6,7,8,9
+  for(const seq of [[...m].reverse()]){
     let top=fd[fd.length-1],ok=true;
     for(const c of seq){if(!Rules.canPlaceOnFoundation(c,top)){ok=false;break}top=c}
     if(ok)return seq;
